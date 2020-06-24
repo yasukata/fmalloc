@@ -17,11 +17,11 @@ DIST_FILES2 = $(DIST_FILES1) \
 TAR_FLAGS = --numeric-owner --exclude "*~" --exclude "debian/tmp*"
 
 #CC = /pkg/gcc-2.95.2-wg/bin/gcc
-CC = gcc
+CC = g++
 
 SYS_FLAGS  =
 OPT_FLAGS  = -g -O2 #-O # -O2
-WARN_FLAGS = -Wall -Wstrict-prototypes
+WARN_FLAGS = -Wall
 SH_FLAGS   = -shared -fpic
 
 INC_FLAGS  = -Isysdeps/generic
@@ -41,20 +41,22 @@ RM        = rm -f
 AR        = ar
 RANLIB    = ranlib
 
-MALLOC_OBJ = ptmalloc3.o malloc.o
-LIB_MALLOC = libptmalloc3.a
+MALLOC_OBJ = fmalloc.o ptmalloc3.o malloc.o
+LIB_MALLOC = libfmalloc.a
 
 T_SUF =
 TESTS = t-test1$(T_SUF) t-test2$(T_SUF) \
 	tst-independent-alloc$(T_SUF)
         #m-test1$(T_SUF) tst-mallocstate$(T_SUF) tst-mstats$(T_SUF)
 
-CFLAGS = $(SYS_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) $(THR_FLAGS) $(INC_FLAGS)
+
+CFLAGS = $(SYS_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) $(THR_FLAGS) $(INC_FLAGS) -DUSE_DL_PREFIX
 
 .c.o:
 	$(CC) -c $(CFLAGS) $<
 
-all: $(LIB_MALLOC) $(TESTS)
+#all: $(LIB_MALLOC) $(TESTS)
+all: $(LIB_MALLOC)
 
 ptmalloc3.o: ptmalloc3.c malloc-2.8.3.h
 	$(CC) -c $(CFLAGS) $(M_FLAGS) -DMSPACES=1 $<
@@ -65,11 +67,11 @@ malloc.o: malloc.c
 #malloc-stats.o: malloc-stats.c malloc.h
 #	$(CC) -c $(CFLAGS) $(M_FLAGS) $<
 
-libptmalloc3.a: $(MALLOC_OBJ)
+libfmalloc.a: $(MALLOC_OBJ)
 	$(AR) cr $@ $(MALLOC_OBJ)
 	$(RANLIB) $@
 
-libptmalloc3.so: $(MALLOC_OBJ)
+libfmalloc.so: $(MALLOC_OBJ)
 	$(CC) $(SH_FLAGS) $(CFLAGS) $(M_FLAGS) $(MALLOC_OBJ) -o $@
 
 again:
@@ -77,7 +79,7 @@ again:
 	$(MAKE) $(TESTS)
 
 clean:
-	$(RM) $(MALLOC_OBJ) libptmalloc3.a libptmalloc3.so $(TESTS) \
+	$(RM) $(MALLOC_OBJ) libfmalloc.a libfmalloc.so $(TESTS) \
          core core.[0-9]*
 
 m-test1$(T_SUF): m-test1.c $(LIB_MALLOC)
@@ -138,14 +140,14 @@ posix-libc:
 
 linux-pthread:
 	$(MAKE) SYS_FLAGS='-D_GNU_SOURCE=1' \
- WARN_FLAGS='-Wall -Wstrict-prototypes' \
+ WARN_FLAGS='-Wall' \
  OPT_FLAGS='$(OPT_FLAGS)' THR_FLAGS='-DUSE_TSD_DATA_HACK' \
  INC_FLAGS='-Isysdeps/pthread -Isysdeps/generic -I.' M_FLAGS='$(M_FLAGS)' \
  TESTS='$(TESTS)'
 
 linux-shared:
 	$(MAKE) SYS_FLAGS='-D_GNU_SOURCE=1 -fpic' \
- WARN_FLAGS='-Wall -Wstrict-prototypes' \
+ WARN_FLAGS='-Wall' \
  OPT_FLAGS='$(OPT_FLAGS)' THR_FLAGS='-DUSE_TSD_DATA_HACK' \
  INC_FLAGS='-Isysdeps/pthread -Isysdeps/generic -I.' M_FLAGS='$(M_FLAGS)' \
  LIB_MALLOC=libptmalloc3.so

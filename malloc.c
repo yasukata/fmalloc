@@ -481,6 +481,11 @@ MAX_RELEASE_CHECK_RATE   default: 255 unless not HAVE_MMAP
   improvement at the expense of carrying around more memory.
 */
 
+#include <fmptr.hpp>
+#ifndef USE_DL_PREFIX
+#define USE_DL_PREFIX
+#endif
+
 #ifndef WIN32
 #ifdef _WIN32
 #define WIN32 1
@@ -1412,6 +1417,17 @@ unsigned char _BitScanReverse(unsigned long *index, unsigned long mask);
    using so many "#if"s.
 */
 
+static void *__call_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset, long line)
+{
+	fprintf(stderr, "[%ld]: call mmap, this should not happen\n", line);
+	exit(1);
+}
+
+static int __call_munmap(void *addr, size_t length, long line)
+{
+	fprintf(stderr, "[%ld]: call munmap, this should not happen\n", line);
+	exit(1);
+}
 
 /* MORECORE and MMAP must return MFAIL on failure */
 #define MFAIL                ((void*)(MAX_SIZE_T))
@@ -1429,14 +1445,14 @@ unsigned char _BitScanReverse(unsigned long *index, unsigned long mask);
 #define USE_MMAP_BIT         (SIZE_T_ONE)
 
 #ifndef WIN32
-#define CALL_MUNMAP(a, s)    munmap((a), (s))
+#define CALL_MUNMAP(a, s)    __call_munmap((a), (s), __LINE__)
 #define MMAP_PROT            (PROT_READ|PROT_WRITE)
 #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
 #define MAP_ANONYMOUS        MAP_ANON
 #endif /* MAP_ANON */
 #ifdef MAP_ANONYMOUS
 #define MMAP_FLAGS           (MAP_PRIVATE|MAP_ANONYMOUS)
-#define CALL_MMAP(s)         mmap(0, (s), MMAP_PROT, MMAP_FLAGS, -1, 0)
+#define CALL_MMAP(s)         __call_mmap(0, (s), MMAP_PROT, MMAP_FLAGS, -1, 0, __LINE__)
 #else /* MAP_ANONYMOUS */
 /*
    Nearly all versions of mmap support MAP_ANONYMOUS, so the following
@@ -1940,9 +1956,9 @@ static MLOCK_T morecore_mutex = NULL_LOCK_INITIALIZER;
 struct malloc_chunk {
   size_t               prev_foot;  /* Size of previous chunk (if free).  */
   size_t               head;       /* Size and inuse bits. */
-  struct malloc_chunk* fd;         /* double links -- used only if free. */
-  struct malloc_chunk* bk;
-};
+  fm_ptr<struct malloc_chunk> fd;         /* double links -- used only if free. */
+  fm_ptr<struct malloc_chunk> bk;
+} __attribute__((packed));
 
 typedef struct malloc_chunk  mchunk;
 typedef struct malloc_chunk* mchunkptr;
@@ -2150,13 +2166,13 @@ struct malloc_tree_chunk {
   /* The first four fields must be compatible with malloc_chunk */
   size_t                    prev_foot;
   size_t                    head;
-  struct malloc_tree_chunk* fd;
-  struct malloc_tree_chunk* bk;
+  fm_ptr<struct malloc_tree_chunk> fd;
+  fm_ptr<struct malloc_tree_chunk> bk;
 
-  struct malloc_tree_chunk* child[2];
-  struct malloc_tree_chunk* parent;
+  fm_ptr<struct malloc_tree_chunk> child[2];
+  fm_ptr<struct malloc_tree_chunk> parent;
   bindex_t                  index;
-};
+} __attribute__((packed));
 
 typedef struct malloc_tree_chunk  tchunk;
 typedef struct malloc_tree_chunk* tchunkptr;
@@ -2223,11 +2239,11 @@ typedef struct malloc_tree_chunk* tbinptr; /* The type of bins of trees */
 */
 
 struct malloc_segment {
-  char*        base;             /* base address */
+  fm_ptr<char>        base;             /* base address */
   size_t       size;             /* allocated size */
-  struct malloc_segment* next;   /* ptr to next segment */
+  fm_ptr<struct malloc_segment> next;   /* ptr to next segment */
   flag_t       sflags;           /* mmap and extern flag */
-};
+} __attribute__((packed));
 
 #define is_mmapped_segment(S)  ((S)->sflags & IS_MMAPPED_BIT)
 #define is_extern_segment(S)   ((S)->sflags & EXTERN_BIT)
@@ -2334,14 +2350,14 @@ struct malloc_state {
   binmap_t   treemap;
   size_t     dvsize;
   size_t     topsize;
-  char*      least_addr;
-  mchunkptr  dv;
-  mchunkptr  top;
+  fm_ptr<char>      least_addr;
+  fm_ptr<struct malloc_chunk>  dv;
+  fm_ptr<struct malloc_chunk>  top;
   size_t     trim_check;
   size_t     release_checks;
   size_t     magic;
-  mchunkptr  smallbins[(NSMALLBINS+1)*2];
-  tbinptr    treebins[NTREEBINS];
+  fm_ptr<struct malloc_chunk> smallbins[(NSMALLBINS+1)*2];
+  fm_ptr<struct malloc_tree_chunk> treebins[NTREEBINS];
   size_t     footprint;
   size_t     max_footprint;
   flag_t     mflags;
@@ -2349,9 +2365,9 @@ struct malloc_state {
   MLOCK_T    mutex;     /* locate lock among fields that rarely change */
 #endif /* USE_LOCKS */
   msegment   seg;
-  void*      extp;      /* Unused but available for extensions */
+  //void*      extp;      /* Unused but available for extensions */
   size_t     exts;
-};
+} __attribute__((packed));
 
 typedef struct malloc_state*    mstate;
 
@@ -2808,7 +2824,7 @@ static size_t traverse_and_check(mstate m);
 /* ---------------------------- setting mparams -------------------------- */
 
 /* Initialize mparams */
-static int init_mparams(void) {
+int init_mparams(void) {
   if (mparams.page_size == 0) {
     size_t s;
 
@@ -3332,7 +3348,7 @@ static void internal_malloc_stats(mstate m) {
 
 /* Insert chunk into tree */
 #define insert_large_chunk(M, X, S) {\
-  tbinptr* H;\
+  fm_ptr<malloc_tree_chunk>* H;\
   bindex_t I;\
   compute_tree_index(S, I);\
   H = treebin_at(M, I);\
@@ -3349,7 +3365,7 @@ static void internal_malloc_stats(mstate m) {
     size_t K = S << leftshift_for_tree_index(I);\
     for (;;) {\
       if (chunksize(T) != S) {\
-        tchunkptr* C = &(T->child[(K >> (SIZE_T_BITSIZE-SIZE_T_ONE)) & 1]);\
+        fm_ptr<malloc_tree_chunk>* C = &(T->child[(K >> (SIZE_T_BITSIZE-SIZE_T_ONE)) & 1]);\
         K <<= 1;\
         if (*C != 0)\
           T = *C;\
@@ -3414,10 +3430,10 @@ static void internal_malloc_stats(mstate m) {
     }\
   }\
   else {\
-    tchunkptr* RP;\
+    fm_ptr<malloc_tree_chunk>* RP;\
     if (((R = *(RP = &(X->child[1]))) != 0) ||\
         ((R = *(RP = &(X->child[0]))) != 0)) {\
-      tchunkptr* CP;\
+      fm_ptr<malloc_tree_chunk>* CP;\
       while ((*(CP = &(R->child[1])) != 0) ||\
              (*(CP = &(R->child[0])) != 0)) {\
         R = *(RP = CP);\
@@ -3430,7 +3446,7 @@ static void internal_malloc_stats(mstate m) {
     }\
   }\
   if (XP != 0) {\
-    tbinptr* H = treebin_at(M, X->index);\
+    fm_ptr<malloc_tree_chunk>* H = treebin_at(M, X->index);\
     if (X == *H) {\
       if ((*H = R) == 0) \
         clear_treemap(M, X->index);\
@@ -3866,7 +3882,7 @@ static void* sys_alloc(mstate m, size_t nb) {
       msegmentptr sp = &m->seg;
       /* Only consider most recent segment if traversal suppressed */
       while (sp != 0 && tbase != sp->base + sp->size)
-        sp = (NO_SEGMENT_TRAVERSAL) ? 0 : sp->next;
+        sp = (NO_SEGMENT_TRAVERSAL) ? (msegmentptr) 0 : sp->next;
       if (sp != 0 &&
           !is_extern_segment(sp) &&
           (sp->sflags & IS_MMAPPED_BIT) == mmap_flag &&
@@ -3879,7 +3895,7 @@ static void* sys_alloc(mstate m, size_t nb) {
           m->least_addr = tbase;
         sp = &m->seg;
         while (sp != 0 && sp->base != tbase + tsize)
-          sp = (NO_SEGMENT_TRAVERSAL) ? 0 : sp->next;
+          sp = (NO_SEGMENT_TRAVERSAL) ? (msegmentptr) 0 : sp->next;
         if (sp != 0 &&
             !is_extern_segment(sp) &&
             (sp->sflags & IS_MMAPPED_BIT) == mmap_flag) {
@@ -4795,7 +4811,7 @@ static mstate init_user_mstate(char* tbase, size_t tsize) {
   m->magic = mparams.magic;
   m->release_checks = MAX_RELEASE_CHECK_RATE;
   m->mflags = mparams.default_mflags;
-  m->extp = 0;
+  //m->extp = 0;
   m->exts = 0;
   disable_contiguous(m);
   init_bins(m);

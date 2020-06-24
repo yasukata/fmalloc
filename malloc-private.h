@@ -49,9 +49,9 @@ static int dev_zero_fd = -1; /* Cached file descriptor for /dev/zero. */
 struct malloc_chunk {
   size_t               prev_foot;  /* Size of previous chunk (if free).  */
   size_t               head;       /* Size and inuse bits. */
-  struct malloc_chunk* fd;         /* double links -- used only if free. */
-  struct malloc_chunk* bk;
-};
+  fm_ptr<struct malloc_chunk> fd;         /* double links -- used only if free. */
+  fm_ptr<struct malloc_chunk> bk;
+} __attribute__((packed));
 
 typedef struct malloc_chunk  mchunk;
 typedef struct malloc_chunk* mchunkptr;
@@ -63,11 +63,11 @@ struct malloc_tree_chunk;
 typedef struct malloc_tree_chunk* tbinptr;
 
 struct malloc_segment {
-  char*        base;             /* base address */
+  fm_ptr<char>        base;             /* base address */
   size_t       size;             /* allocated size */
-  struct malloc_segment* next;   /* ptr to next segment */
+  fm_ptr<struct malloc_segment> next;   /* ptr to next segment */
   flag_t       sflags;           /* mmap and extern flag */
-};
+} __attribute__((packed));
 
 typedef struct malloc_segment  msegment;
 
@@ -79,14 +79,14 @@ struct malloc_state {
   binmap_t   treemap;
   size_t     dvsize;
   size_t     topsize;
-  char*      least_addr;
-  mchunkptr  dv;
-  mchunkptr  top;
+  fm_ptr<char>      least_addr;
+  fm_ptr<struct malloc_chunk>  dv;
+  fm_ptr<struct malloc_chunk>  top;
   size_t     trim_check;
   size_t     release_checks;
   size_t     magic;
-  mchunkptr  smallbins[(NSMALLBINS+1)*2];
-  tbinptr    treebins[NTREEBINS];
+  fm_ptr<struct malloc_chunk> smallbins[(NSMALLBINS+1)*2];
+  fm_ptr<struct malloc_tree_chunk> treebins[NTREEBINS];
   size_t     footprint;
   size_t     max_footprint;
   flag_t     mflags;
@@ -94,9 +94,9 @@ struct malloc_state {
   MLOCK_T    mutex;
 #endif /* USE_LOCKS */
   msegment   seg;
-  void*      extp;
+  //void*      extp;
   size_t     exts;
-};
+} __attribute__((packed));
 
 /*
   TOP_FOOT_SIZE is padding at the end of a segment, including space
