@@ -189,5 +189,8 @@ int main(int argc, char const* argv[])
 ### A few points
 
 - ```struct node``` has fm\_ptr to point the next node that is located on a memory-mapped file.
-- ```list_append```, ```append_nodes```, and ```read_nodes``` are the same as the standard in-memory list implementation. But, actually, this implementation stores and reads the list on a file.
+- ```list_append``` is the same as the standard in-memory list implementation. But, actually, this implementation stores and reads the list on a file.
 
+## Note
+
+The size of the memory-mapped file should be large enough. Otherwise, fmalloc fails to allocate memory.
