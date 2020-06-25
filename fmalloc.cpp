@@ -57,6 +57,7 @@ struct fm_info *fmalloc_init(const char *filepath, bool *init)
 
 		s->magic = FMALLOC_MAGIC;
 		s->set_total_size(len);
+		s->bitmap_set(0);
 
 		initialized = (int *)((uint64_t) mem + FMALLOC_OFF);
 		*initialized = -1;

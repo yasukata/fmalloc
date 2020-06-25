@@ -49,7 +49,7 @@
 #endif
 
 #define FMALLOC_OFF (PAGE_SIZE * 2)
-#define FMALLOC_MIN_CHUNK (1UL << 30)
+#define FMALLOC_MIN_CHUNK (1UL << 24)
 
 /*
  * data layout on a file
@@ -69,21 +69,21 @@ struct fm_super {
 	uint64_t magic;
 	uint64_t total_size;
 	uint64_t chunk_size;
-	uint16_t bmsize;
+	uint64_t num_chunk;
 	uint8_t bm[0]; /* this must be at the end */
 
 	void set_total_size(uint64_t size)
 	{
-		total_size = (size / PAGE_SIZE) * PAGE_SIZE;
+		this->total_size = (size / PAGE_SIZE) * PAGE_SIZE;
 		if (total_size < FMALLOC_MIN_CHUNK) {
-			bmsize = 1;
+			num_chunk = 1;
 			chunk_size = total_size;
 		} else {
-			bmsize = PAGE_SIZE - sizeof(struct fm_super) - sizeof(uint64_t);
-			chunk_size = (((size - FMALLOC_OFF) / PAGE_SIZE) * PAGE_SIZE) / (bmsize * 8);
+			num_chunk = (PAGE_SIZE - sizeof(struct fm_super)) * 8;
+			chunk_size = (((size - FMALLOC_OFF) / PAGE_SIZE) * PAGE_SIZE) / num_chunk;
 			if (chunk_size < FMALLOC_MIN_CHUNK) {
 				chunk_size = FMALLOC_MIN_CHUNK;
-				bmsize = ((total_size / chunk_size) / 8) * 8;
+				num_chunk = total_size / chunk_size;
 			}
 		}
 	}
@@ -104,6 +104,11 @@ struct fm_super {
 		return i2m(this, idx);
 	}
 
+	void bitmap_set(int idx)
+	{
+		bm[idx / 8] |= (1UL << (idx % 8));
+	}
+
 	void bitmap_release(uint8_t *bm, int idx)
 	{
 		bm[idx / 8] &= ~(1UL << (idx % 8));
@@ -114,6 +119,8 @@ struct fm_super {
 		unsigned long i, j;
 		for (i = 0; i < (total_size / chunk_size); i++) {
 			for (j = 0; j < 8; j++) {
+				if (num_chunk <= i * 8 + j)
+					return -1;
 				if (!(bm[i] & (1UL << j))) {
 					bm[i] |= (1UL << j);
 					return i * 8 + j;
@@ -143,8 +150,6 @@ struct fm_info {
 	fm_info(int _fd, void *_mem, struct fm_super *_s) : fd(_fd), mem(_mem), s(_s)
 	{
 	}
-
-
 };
 
 struct fm_info *fmalloc_init(const char *filepath, bool *init);
